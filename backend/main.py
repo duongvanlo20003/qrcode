@@ -173,6 +173,21 @@ def get_scans(session_id: int = None, db: Session = Depends(get_db)):
         } for s in results
     ]
 
+@app.delete("/sessions/{session_id}/scans")
+def clear_session_scans(session_id: int, db: Session = Depends(get_db)):
+    db.query(ScanResult).filter(ScanResult.session_id == session_id).delete()
+    db.commit()
+    return {"message": f"All scans for session {session_id} cleared"}
+
+@app.delete("/sessions/{session_id}")
+def delete_session(session_id: int, db: Session = Depends(get_db)):
+    db.query(ScanResult).filter(ScanResult.session_id == session_id).delete()
+    sess = db.query(ScanSession).filter(ScanSession.id == session_id).first()
+    if sess:
+        db.delete(sess)
+    db.commit()
+    return {"message": f"Session {session_id} deleted"}
+
 def _parse_factory(content: str):
     if not content or not content.startswith("FACTORY|"): return None, None, None, None, None
     parts = content.split("|")

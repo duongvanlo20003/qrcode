@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, Server, ShieldCheck, AlignLeft, AlertCircle, PackageSearch, Globe, Hash, FolderOpen, X, Package } from 'lucide-react';
+import { Camera, Server, ShieldCheck, AlignLeft, AlertCircle, PackageSearch, Globe, Hash, FolderOpen, X, Package, Trash2 } from 'lucide-react';
 
 const parseFactoryQR = (content: string): Partial<ScanResult> => {
   if (!content || !content.startsWith('FACTORY|')) return {};
@@ -118,6 +118,7 @@ function App() {
   const [activeSession, setActiveSession] = useState<ScanSession | null>(null);
   const [viewingSession, setViewingSession] = useState<ScanSession | null>(null);
   const [isStartingSession, setIsStartingSession] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const host = window.location.hostname;
   const API_URL = `http://${host}:8000`;
@@ -195,7 +196,15 @@ function App() {
     }
   };
 
-  // Handle End Session
+  // Handle Delete Session
+  const deleteSession = async (sessionId: number) => {
+    await fetch(`${API_URL}/sessions/${sessionId}`, { method: 'DELETE' });
+    if (viewingSession?.id === sessionId) setViewingSession(null);
+    if (activeSession?.id === sessionId) setActiveSession(null);
+    const listR = await fetch(`${API_URL}/sessions`);
+    setSessions(await listR.json());
+  };
+
   const endSession = async () => {
     if (!activeSession) return;
     await fetch(`${API_URL}/sessions/${activeSession.id}/end`, { method: 'PUT' });
@@ -451,9 +460,15 @@ function App() {
         
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-red-500'}`} />
+            <div className={`w-3 h-3 rounded-full ${
+              isConnected
+                ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)] animate-pulse'
+                : activeSession
+                  ? 'bg-red-500'
+                  : 'bg-amber-400'
+            }`} />
             <span className="font-bold text-sm tracking-wide text-slate-300">
-              {isConnected ? 'SYSTEM LIVE' : 'OFFLINE'}
+              {isConnected ? 'SYSTEM LIVE' : activeSession ? 'OFFLINE' : 'STANDBY'}
             </span>
           </div>
           
@@ -466,12 +481,14 @@ function App() {
                 END SESSION
               </button>
             )}
-            <button
-               onClick={() => { setShowResetDialog(true); setResetConfirmText(''); }}
-               className="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-xs px-3 py-2 rounded-lg transition-colors border border-white/5"
-            >
-              RESET DB
-            </button>
+            {activeSession && (
+              <button
+                 onClick={() => { setShowResetDialog(true); setResetConfirmText(''); }}
+                 className="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-xs px-3 py-2 rounded-lg transition-colors border border-white/5"
+              >
+                RESET SESSION
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -500,20 +517,18 @@ function App() {
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
                 {sessions.map(s => (
-                    <button 
-                        key={s.id}
+                    <div className={`w-full text-left p-4 rounded-2xl border transition-all group cursor-pointer ${viewingSession?.id === s.id ? 'bg-slate-800 border-sky-400/50 shadow-xl' : 'bg-transparent border-white/5 hover:bg-white/5'}`}
                         onClick={() => setViewingSession(s)}
-                        className={`w-full text-left p-4 rounded-2xl border transition-all group ${viewingSession?.id === s.id ? 'bg-slate-800 border-sky-400/50 shadow-xl' : 'bg-transparent border-white/5 hover:bg-white/5'}`}
                     >
                         <div className="flex justify-between items-start mb-1">
                             <p className={`font-bold text-sm truncate flex-1 ${viewingSession?.id === s.id ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>{s.name}</p>
-                            {s.is_active === 1 && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse mt-1 ml-2" />}
+                            {s.is_active === 1 && <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse ml-2" />}
                         </div>
                         <div className="flex items-center justify-between">
                             <p className="text-[10px] font-medium text-slate-500">{new Date(s.start_time).toLocaleDateString()}</p>
                             <span className="text-[10px] font-black bg-slate-800 px-2 py-0.5 rounded text-slate-400 group-hover:text-sky-400">{s.total_scans} scans</span>
                         </div>
-                    </button>
+                    </div>
                 ))}
             </div>
         </aside>
@@ -521,8 +536,8 @@ function App() {
         {/* DASHBOARD AREA */}
         <div className="flex-1 p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 overflow-hidden relative">
           
-          {/* START SESSION OVERLAY */}
-          {!activeSession && (
+          {/* START SESSION OVERLAY — only when nothing selected */}
+          {!activeSession && !viewingSession && (
             <div className="absolute inset-0 z-20 bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-8">
                 <div className="max-w-md w-full text-center bg-slate-900 border border-white/10 p-10 rounded-[40px] shadow-2xl animate-in zoom-in-95 duration-500">
                     <div className="w-20 h-20 rounded-3xl bg-sky-400/10 border border-sky-400/30 flex items-center justify-center mx-auto mb-6">
@@ -541,6 +556,123 @@ function App() {
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Or select a previous session from the sidebar</p>
                     </div>
                 </div>
+            </div>
+          )}
+
+          {/* SESSION DETAIL PANEL — when a past session is selected but not live */}
+          {!activeSession && viewingSession && (
+            <div className="absolute inset-0 z-20 overflow-y-auto p-6 bg-slate-950">
+              <div className="max-w-3xl mx-auto space-y-5">
+                {/* Header */}
+                <div className="bg-slate-900 border border-white/10 rounded-3xl p-6 flex items-start justify-between">
+                  <div>
+                    <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest mb-1">Session Report</p>
+                    <h2 className="text-2xl font-black text-white">{viewingSession.name}</h2>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
+                      <span>Bắt đầu: {new Date(viewingSession.start_time).toLocaleString('vi-VN')}</span>
+                      {viewingSession.end_time && <span>· Kết thúc: {new Date(viewingSession.end_time).toLocaleString('vi-VN')}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={startSession}
+                      disabled={isStartingSession}
+                      className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-xs rounded-xl transition-all"
+                    >
+                      {isStartingSession ? '...' : '+ NEW SESSION'}
+                    </button>
+                    {viewingSession.is_active !== 1 && (
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-bold text-xs rounded-xl transition-all"
+                      >
+                        <Trash2 size={13} /> XOÁ PHIÊN
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stats Row */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-slate-900 border border-white/5 rounded-2xl p-5 text-center">
+                    <div className="text-3xl font-black text-indigo-400">{history.length}</div>
+                    <div className="text-[10px] text-slate-500 font-bold uppercase mt-1">Total Scans</div>
+                  </div>
+                  <div className="bg-slate-900 border border-sky-400/20 rounded-2xl p-5 text-center">
+                    <div className="text-3xl font-black text-green-400">{history.filter(h => h.status === 'ok').length}</div>
+                    <div className="text-[10px] text-slate-500 font-bold uppercase mt-1">Successful</div>
+                  </div>
+                  <div className="bg-slate-900 border border-white/5 rounded-2xl p-5 text-center">
+                    <div className="text-3xl font-black text-slate-300">{history.filter(h => h.status !== 'ok').length}</div>
+                    <div className="text-[10px] text-slate-500 font-bold uppercase mt-1">Failed</div>
+                  </div>
+                </div>
+
+                {/* Category Breakdown */}
+                <div className="bg-slate-900 border border-white/5 rounded-3xl p-6">
+                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Phân loại sản phẩm</h3>
+                  <div className="space-y-3">
+                    {Object.entries(categories).map(([cat, count]) => {
+                      const catScans = history.filter(h => h.product_type === cat || (h.qr_content && categorizeQR(h.qr_content) === cat));
+                      const totalPrice = catScans.reduce((sum, h) => sum + (h.total_price || 0), 0);
+                      const totalQty = catScans.reduce((sum, h) => sum + (h.quantity || 0), 0);
+                      if (count === 0 && catScans.length === 0) return null;
+                      return (
+                        <div key={cat} className="flex items-center gap-4 p-3 bg-slate-800/50 rounded-xl">
+                          <div className="flex-1">
+                            <p className="text-sm font-bold text-slate-200">{cat}</p>
+                            <p className="text-[11px] text-slate-500">{totalQty > 0 ? `${totalQty.toLocaleString()} gói` : '—'}</p>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-black text-sky-400">{count || catScans.length}</div>
+                            <div className="text-[10px] text-slate-500">thùng</div>
+                          </div>
+                          <div className="text-right min-w-[100px]">
+                            <div className="text-sm font-black text-emerald-400">{totalPrice > 0 ? totalPrice.toLocaleString('vi-VN') + 'đ' : '—'}</div>
+                            <div className="text-[10px] text-slate-500">tổng giá</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {Object.values(categories).every(c => c === 0) && history.length === 0 && (
+                      <p className="text-slate-500 text-sm text-center py-4">Không có dữ liệu trong phiên này.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Scan Table */}
+                {history.length > 0 && (
+                  <div className="bg-slate-900 border border-white/5 rounded-3xl p-6">
+                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-4">Chi tiết quét ({history.length} bản ghi)</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-slate-500 uppercase tracking-wider border-b border-white/5">
+                            <th className="text-left pb-3 font-black">Thời gian</th>
+                            <th className="text-left pb-3 font-black">Loại sản phẩm</th>
+                            <th className="text-right pb-3 font-black">Số lượng</th>
+                            <th className="text-right pb-3 font-black">Đơn giá</th>
+                            <th className="text-right pb-3 font-black">Tổng tiền</th>
+                            <th className="text-right pb-3 font-black">Conf</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {history.map(s => (
+                            <tr key={s.id} className="hover:bg-white/5 transition-colors">
+                              <td className="py-2.5 text-slate-400 pr-4 whitespace-nowrap">{new Date(s.timestamp).toLocaleTimeString('vi-VN')}</td>
+                              <td className="py-2.5 text-slate-200 pr-4">{s.product_type || <span className="text-slate-500">—</span>}</td>
+                              <td className="py-2.5 text-right text-slate-300 pr-4">{s.quantity ? s.quantity.toLocaleString() : '—'}</td>
+                              <td className="py-2.5 text-right text-slate-300 pr-4">{s.unit_price ? s.unit_price.toLocaleString('vi-VN') + 'đ' : '—'}</td>
+                              <td className="py-2.5 text-right font-black text-emerald-400">{s.total_price ? s.total_price.toLocaleString('vi-VN') + 'đ' : '—'}</td>
+                              <td className="py-2.5 text-right text-slate-400">{((s.confidence || 0) * 100).toFixed(0)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -858,13 +990,13 @@ function App() {
                 <AlertCircle size={24} className="text-red-500" />
               </div>
               <div>
-                <h2 className="text-lg font-black text-white">Xác nhận xoá dữ liệu</h2>
-                <p className="text-xs text-slate-400 mt-0.5">Hành động này không thể hoàn tác.</p>
+                <h2 className="text-lg font-black text-white">Xoá dữ liệu phiên hiện tại</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Chỉ xoá scan trong phiên này. Hành động không thể hoàn tác.</p>
               </div>
             </div>
             <div className="p-6 flex flex-col gap-5">
               <p className="text-sm text-slate-300">
-                Toàn bộ lịch sử quét và số liệu thống kê sẽ bị xoá vĩnh viễn.
+                Xoá toàn bộ scan trong phiên <span className="font-mono font-black text-sky-400">{activeSession?.name}</span>.
                 Nhập <span className="font-mono font-black text-red-400">confirm</span> để tiếp tục.
               </p>
               <input
@@ -873,8 +1005,8 @@ function App() {
                 value={resetConfirmText}
                 onChange={e => setResetConfirmText(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && resetConfirmText === 'confirm') {
-                    fetch(`${API_URL}/scans`, { method: 'DELETE' }).then(() => {
+                  if (e.key === 'Enter' && resetConfirmText === 'confirm' && activeSession) {
+                    fetch(`${API_URL}/sessions/${activeSession.id}/scans`, { method: 'DELETE' }).then(() => {
                       setHistory([]);
                       setCategories({ 'Thạch (Jelly)': 0, 'Kẹo dẻo (Gummy)': 0, 'Kẹo xốp (Marshmallow)': 0, 'Bánh quy (Biscuit)': 0, 'Bánh kem (Cake)': 0 });
                       setShowResetDialog(false);
@@ -894,7 +1026,8 @@ function App() {
                 <button
                   disabled={resetConfirmText !== 'confirm'}
                   onClick={() => {
-                    fetch(`${API_URL}/scans`, { method: 'DELETE' }).then(() => {
+                    if (!activeSession) return;
+                    fetch(`${API_URL}/sessions/${activeSession.id}/scans`, { method: 'DELETE' }).then(() => {
                       setHistory([]);
                       setCategories({ 'Thạch (Jelly)': 0, 'Kẹo dẻo (Gummy)': 0, 'Kẹo xốp (Marshmallow)': 0, 'Bánh quy (Biscuit)': 0, 'Bánh kem (Cake)': 0 });
                       setShowResetDialog(false);
@@ -902,7 +1035,49 @@ function App() {
                   }}
                   className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-400 disabled:bg-red-500/20 disabled:text-red-500/40 disabled:cursor-not-allowed text-white font-black text-sm transition-all"
                 >
-                  XOÁ DỮ LIỆU
+                  XOÁ PHIÊN
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* DELETE SESSION CONFIRM DIALOG */}
+      {showDeleteConfirm && viewingSession && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="bg-slate-900 border border-red-500/30 rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-800 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center flex-shrink-0">
+                <Trash2 size={22} className="text-red-500" />
+              </div>
+              <div>
+                <h2 className="text-base font-black text-white">Xoá phiên này?</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Hành động không thể hoàn tác.</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-slate-800/60 rounded-2xl px-4 py-3 border border-white/5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Sẽ xoá phiên</p>
+                <p className="text-sm font-black text-white truncate">{viewingSession.name}</p>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Toàn bộ <span className="text-white font-bold">{viewingSession.total_scans} bản ghi</span> trong phiên này sẽ bị xoá vĩnh viễn khỏi database.
+              </p>
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm transition-colors"
+                >
+                  Huỷ
+                </button>
+                <button
+                  onClick={() => {
+                    deleteSession(viewingSession.id);
+                    setShowDeleteConfirm(false);
+                  }}
+                  className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-400 text-white font-black text-sm transition-all shadow-lg shadow-red-500/20"
+                >
+                  XOÁ PHIÊN
                 </button>
               </div>
             </div>

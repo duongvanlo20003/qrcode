@@ -1,0 +1,20 @@
+# Dependencies
+frontend/node_modules/
+backend/__pycache__/
+backend/*.pyc
+
+# Build artifacts
+frontend/dist/
+
+# Environment & secrets
+.env
+*.env
+
+# OS
+.DS_Store
+
+# Docker volumes (local only)
+mysql_data/
+
+# Model weights (large binary)
+backend/best.pt
