@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+websockets
+ultralytics
+pyzbar
+opencv-contrib-python-headless
+sqlalchemy
+pymysql
+cryptography
+python-multipart
+numpy

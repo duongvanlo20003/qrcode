@@ -1,0 +1,49 @@
+services:
+  mysqldb:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: qr_scanner
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql_init:/docker-entrypoint-initdb.d
+      - db_data:/var/lib/mysql
+
+  backend:
+    build: ./backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=mysqldb
+      - DB_USER=root
+      - DB_PASSWORD=root
+      - DB_NAME=qr_scanner
+      - DB_PORT=3306
+    depends_on:
+      - mysqldb
+    volumes:
+      - ./backend/best.pt:/app/best.pt:ro
+
+  frontend:
+    build: ./frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysqldb
+
+volumes:
+  db_data:
